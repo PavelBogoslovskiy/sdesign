@@ -1,0 +1,24 @@
+{
+    "id": 0,
+    "username": "Pasha",
+    "email": "test@text.ru", 
+    "hashed_password": "hashed_password", 
+    "age": 85
+}
+
+{
+    "package_id": 0,
+    "user_id": 0,
+    "weight": 1, 
+    "length": 1, 
+    "width": 1,
+    "height": 1
+}
+
+{
+    "delivery_id": 0,
+    "package_id": 0,
+    "recipient_id": 0, 
+    "sender_id": 0, 
+    "status": "Отправлено"
+}
