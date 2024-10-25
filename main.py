@@ -222,8 +222,8 @@ def create_delivery(delivery: Delivery, current_user: str = Depends(get_current_
     raise HTTPException(status_code=404, detail="Sender not found")
 
 ## smth
-# GET /user_package/{user_id} - Получить посылки по ID пользователя(требует аутентификации)
-@app.get("/user_package/{user_id}", response_model=List[Package])
+# GET /package/user/{user_id} - Получить посылки по ID пользователя(требует аутентификации)
+@app.get("/package/user/{user_id}", response_model=List[Package])
 def get_package_by_user_id(user_id: int, current_user: str = Depends(get_current_client)):
     all_el = []
     for el in package_db:
@@ -234,8 +234,8 @@ def get_package_by_user_id(user_id: int, current_user: str = Depends(get_current
     raise HTTPException(status_code=404, detail="User has no packages")
 
 
-# GET /user_delivery/{user_id} - Узнать информацию по доставке по ID получателя(требует аутентификации)
-@app.get("/user_delivery/{user_id}", response_model=List[Delivery])
+# GET /delivery/user/{user_id} - Узнать информацию по доставке по ID получателя(требует аутентификации)
+@app.get("/delivery/user/{user_id}", response_model=List[Delivery])
 def get_package_by_recipient(user_id: int, current_user: str = Depends(get_current_client)):
     all_el = []
     for el in delivery_db:
