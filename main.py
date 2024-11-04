@@ -5,24 +5,76 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+import pandas as pd
+import psycopg2 as pg
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+
+pg_host = os.getenv('POSTGRS_HOST')
+pg_port = os.getenv('POSTGRS_PORT')
+pg_user = os.getenv('POSTGRS_USER')
+pg_pass = os.getenv('POSTGRS_PASS')
+pg_db_name = os.getenv('POSTGRS_DB')
+
 
 # Секретный ключ для подписи JWT
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+def get_data_postrs(query_postrs_pattern):
+    """
+    Функция для получения порции данных по запросу query_postrs_pattern 
+    из пг. Возвращает таблицу в виде пандас датафрейма
+    """
+    engine = pg.connect("dbname='{}' user='{}' host='{}' port='{}' password='{}'".format(pg_db_name, pg_user, 
+                                                                                pg_host, pg_port, pg_pass))
+    try:
+        return pd.read_sql_query(query_postrs_pattern,con=engine)
+    except Exception as e:
+        raise e
+    finally:
+        engine.close()
+
+
+def insert_data_pg(query, new_val):
+    engine = pg.connect("dbname='{}' user='{}' host='{}' port='{}' password='{}'".format(pg_db_name, pg_user, 
+                                                                                pg_host, pg_port, pg_pass))
+    try:
+        cursor = engine.cursor()
+        cursor.execute(query, new_val)
+        engine.commit()
+    except Exception as e:
+        raise e
+    finally:
+        engine.close()
+
+
+def del_data_pg(query, id):
+    engine = pg.connect("dbname='{}' user='{}' host='{}' port='{}' password='{}'".format(pg_db_name, pg_user, 
+                                                                                pg_host, pg_port, pg_pass))
+    try:
+        cursor = engine.cursor()
+        cursor.execute(query, (id,))
+        engine.commit()
+    except Exception as e:
+        engine.rollback()
+        raise e
+    finally:
+        engine.close()
+
+
 app = FastAPI()
 
 # Модель данных для пользователя
 class User(BaseModel):
-    id: int
     username: str
-    email: str
+    login: str
     hashed_password: str
-    age: Optional[int] = None
 
 class Package(BaseModel):
-    package_id: int
     user_id: int
     weight: int
     length: int
@@ -30,7 +82,6 @@ class Package(BaseModel):
     height: int
 
 class Delivery(BaseModel):
-    delivery_id: int
     package_id: int
     recipient_id: int
     sender_id: int
@@ -112,138 +163,109 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 # GET /users - Получить всех пользователей (требует аутентификации)
 @app.get("/users", response_model=List[User])
 def get_users(current_user: str = Depends(get_current_client)):
-    return users_db
+    return get_data_postrs('SELECT id FROM "user";').to_json(orient='records')
 
 
 # GET /users/{user_id} - Получить пользователя по ID (требует аутентификации)
 @app.get("/users/{user_id}", response_model=User)
 def get_user(user_id: int, current_user: str = Depends(get_current_client)):
-    for user in users_db:
-        if user.id == user_id:
-            return user
-    raise HTTPException(status_code=404, detail="User not found")
+    data = get_data_postrs(f'SELECT * FROM "user" WHERE id={user_id}; ').to_dict(orient='records')
+    if len(data) == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    else:
+        return data[0]
 
 
 # POST /users - Создать нового пользователя (требует аутентификации)
 @app.post("/users", response_model=User)
 def create_user(user: User, current_user: str = Depends(get_current_client)):
-    for u in users_db:
-        if u.id == user.id:
-            raise HTTPException(status_code=404, detail="User already exist")
-    users_db.append(user)
+    data = get_data_postrs(f'SELECT id FROM "user" WHERE login={user.login}; ').to_dict(orient='records')
+    if len(data):
+        raise HTTPException(status_code=404, detail="User already exist")
+    else:
+        insert_data_pg( """
+        INSERT INTO "user" (username, hashed_password, login)
+        VALUES (%s, %s, %s)
+        """,
+        [user.username, user.hashed_password, user.login])
     return user
-
-
-# PUT /users/{user_id} - Обновить пользователя по ID (требует аутентификации)
-@app.put("/users/{user_id}", response_model=User)
-def update_user(user_id: int, updated_user: User, current_user: str = Depends(get_current_client)):
-    for index, user in enumerate(users_db):
-        if user.id == user_id:
-            users_db[index] = updated_user
-            return updated_user
-    raise HTTPException(status_code=404, detail="User not found")
 
 
 # DELETE /users/{user_id} - Удалить пользователя по ID (требует аутентификации)
 @app.delete("/users/{user_id}", response_model=User)
 def delete_user(user_id: int, current_user: str = Depends(get_current_client)):
-    for index, user in enumerate(users_db):
-        if user.id == user_id:
-            deleted_user = users_db.pop(index)
-            return deleted_user
-    raise HTTPException(status_code=404, detail="User not found")
+    data = get_data_postrs(f'SELECT id FROM "user" WHERE id={user_id}; ').to_dict(orient='records')
+    if len(data):
+        del_data_pg('DELETE FROM "user" WHERE id = %s;',  user_id)
+        return 'ok'
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
 
 
 ########## package
 # GET /package/{package_id} - Получить посылку по id (требует аутентификации)
 @app.get("/package/{package_id}", response_model=Package)
 def get_package_by_id(package_id: int, current_user: str = Depends(get_current_client)):
-    for el in package_db:
-        if el.package_id == package_id:
-            return el
-    raise HTTPException(status_code=404, detail="Package not found")
+    data = get_data_postrs(f'SELECT * FROM "package" WHERE package_id={package_id}; ').to_dict(orient='records')
+    if len(data) == 0:
+        raise HTTPException(status_code=404, detail="Package not found")
+    else:
+        return data[0]
 
 
 # POST /package - Создать новую посылку (требует аутентификации)
 @app.post("/package", response_model=Package)
 def create_package(package: Package, current_user: str = Depends(get_current_client)):
-    for el in package_db:
-        if el.package_id == package.package_id:
-            raise HTTPException(status_code=404, detail="Package already exist")
-    # Если бы были авторизованы под пользователем, а не админом, то проверка была бы не нужна
-    # Хотя можно считать, что это проверяется на уровне хранилища
-    for el in users_db:
-        if el.id == package.user_id: 
-            package_db.append(package)
-            return package
-    raise HTTPException(status_code=404, detail="User not found")
-
-
-# PUT /package/{package_id} - Обновить посылку по ID (требует аутентификации)
-@app.put("/package/{package_id}", response_model=Package)
-def update_package(package_id: int, updated_package: Package, current_user: str = Depends(get_current_client)):
-    for index, package in enumerate(package_db):
-        if package.package_id == package_id:
-            package_db[index] = updated_package
-            return updated_package
-    raise HTTPException(status_code=404, detail="Package not found")
-
-
-# DELETE /package/{package_id} - Удалить посылку по ID (требует аутентификации)
-@app.delete("/package/{package_id}", response_model=Package)
-def delete_user(package_id: int, current_user: str = Depends(get_current_client)):
-    for index, package in enumerate(package_db):
-        if package.package_id == package_id:
-            deleted_package = package_db.pop(index)
-            return deleted_package
-    raise HTTPException(status_code=404, detail="Package not found")
+    data = get_data_postrs(f'SELECT id FROM "user" WHERE id={package.user_id}; ').to_dict(orient='records')
+    if len(data) == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    else:
+        insert_data_pg( """
+        INSERT INTO "package" (user_id, weight, length, width, height)
+        VALUES (%s, %s, %s, %s, %s)
+        """, 
+        [package.user_id, package.weight, package.length, package.width, package.height])
+        return package
 
 
 ########## delivery
 # POST /package - Создать новую доставку (требует аутентификации)
 @app.post("/delivery", response_model=Delivery)
 def create_delivery(delivery: Delivery, current_user: str = Depends(get_current_client)):
-    for el in delivery_db:
-        if el.delivery_id == delivery.delivery_id:
-            raise HTTPException(status_code=404, detail="Delivery already exist")
-    # Если бы были авторизованы под пользователем, а не админом, то проверка была бы не нужна
-    # Хотя можно считать, что это проверяется на уровне хранилища
-    flag = False
-    for el in users_db:
-        if el.id == delivery.recipient_id: 
-            flag = True
-    if flag:
-        for el in users_db:
-            if el.id == delivery.sender_id:
-                delivery_db.append(delivery)
-                return delivery
-    else:
+    data = get_data_postrs(f'SELECT id FROM "user" WHERE id={delivery.recipient_id}; ').to_dict(orient='records')
+    if len(data) == 0:
         raise HTTPException(status_code=404, detail="Recipient not found")
-    raise HTTPException(status_code=404, detail="Sender not found")
+    data = get_data_postrs(f'SELECT id FROM "user" WHERE id={delivery.sender_id}; ').to_dict(orient='records')
+    if len(data) == 0:
+        raise HTTPException(status_code=404, detail="Sender not found")
+    data = get_data_postrs(f'SELECT package_id FROM "package" WHERE package_id={delivery.package_id}; ').to_dict(orient='records')
+    if len(data) == 0:
+        raise HTTPException(status_code=404, detail="Package not found")
+    insert_data_pg( """
+    INSERT INTO "delivery" (package_id, recipient_id, sender_id, status)
+    VALUES (%s, %s, %s, %s)
+    """,
+    [delivery.package_id, delivery.recipient_id , delivery.sender_id , delivery.status])
+    return delivery
+
 
 ## smth
 # GET /package/user/{user_id} - Получить посылки по ID пользователя(требует аутентификации)
 @app.get("/package/user/{user_id}", response_model=List[Package])
 def get_package_by_user_id(user_id: int, current_user: str = Depends(get_current_client)):
-    all_el = []
-    for el in package_db:
-        if el.user_id == user_id:
-            all_el.append(el)
-    if len(all_el):
-        return all_el
+    data = get_data_postrs(f'SELECT * FROM "package" WHERE user_id={user_id}; ').to_dict(orient='records')
+    if len(data):
+        return data
     raise HTTPException(status_code=404, detail="User has no packages")
 
 
 # GET /delivery/user/{user_id} - Узнать информацию по доставке по ID получателя(требует аутентификации)
 @app.get("/delivery/user/{user_id}", response_model=List[Delivery])
 def get_package_by_recipient(user_id: int, current_user: str = Depends(get_current_client)):
-    all_el = []
-    for el in delivery_db:
-        if el.recipient_id == user_id:
-            all_el.append(el)
-    if len(all_el):
-        return all_el
-    raise HTTPException(status_code=404, detail="User has no deliveries")
+    data = get_data_postrs(f'SELECT * FROM "delivery" WHERE recipient_id={user_id}; ').to_dict(orient='records')
+    if len(data):
+        return data
+    raise HTTPException(status_code=404, detail="Recipient has no deliveries")
 
 
 # Запуск сервера
