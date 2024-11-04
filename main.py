@@ -87,14 +87,6 @@ class Delivery(BaseModel):
     sender_id: int
     status: str
 
-# Временное хранилище для пользователей
-users_db = []
-
-# Временное хранилище посылок
-package_db = []
-
-# Временное хранилище доставок
-delivery_db = []
 
 # Псевдо-база данных пользователей
 client_db = {
