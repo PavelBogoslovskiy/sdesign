@@ -2,19 +2,17 @@ import pandas as pd
 from sqlalchemy import create_engine
 import random as rd
 import os
-from dotenv import load_dotenv
-load_dotenv()
 
-pg_host = os.getenv('POSTGRS_HOST')
-pg_port = os.getenv('POSTGRS_PORT')
-pg_user = os.getenv('POSTGRS_USER')
-pg_pass = os.getenv('POSTGRS_PASS')
-pg_db_name = os.getenv('POSTGRS_DB')
+pg_host = 'db'
+pg_port = 5432
+pg_user = 'postgres'
+pg_pass = 'postgres'
+pg_db_name = 'db'
 
 engine = create_engine(f"postgresql+psycopg2://{pg_user}:{pg_pass}@{pg_host}/{pg_db_name}", echo = True)
 
 print('Наполнение user')
-user_df = pd.read_json("/workspace/LR3_sql/user_data.json")
+user_df = pd.read_json("user_data.json")
 user_df[['username', 'hashed_password', 'login']].to_sql("user", con=engine, if_exists = 'append', index=False)
 
 print('Наполнение package')

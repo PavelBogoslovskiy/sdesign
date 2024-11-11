@@ -1,0 +1,37 @@
+version: "3.3"
+
+services:
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db_init.sql:/docker-entrypoint-initdb.d/db_init.sql
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    depends_on:
+      - db
+    command: >
+      bash -c "
+      until pg_isready -h db -p 5432; do sleep 1; done;
+      python insert_table.py &&
+      python main.py
+      "
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
+  
+
+
