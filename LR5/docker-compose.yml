@@ -1,0 +1,61 @@
+version: "3.3"
+
+services:
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db_init.sql:/docker-entrypoint-initdb.d/db_init.sql
+    ports:
+      - "5432:5432"
+  
+  mongodb:
+    image: mongo:5.0
+    container_name: mongodb
+    restart: on-failure
+    volumes:
+      - mongodbdata:/data/db
+      - ./mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_URI: mongodb://mongodb:27017
+  
+  cache:
+    container_name: cache
+    image: redis:6.2-alpine
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning 
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      MONGO_URI: mongodb://mongodb:27017
+    depends_on:
+      - db
+      - mongodb
+      - cache
+    command: >
+      bash -c "
+      until pg_isready -h db -p 5432; do sleep 1; done;
+      python create_and_insert_table.py &&
+      python main.py
+      "
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
+  mongodbdata:
+  
+
+
